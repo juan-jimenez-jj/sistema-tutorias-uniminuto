@@ -22,6 +22,8 @@ final class AuthenticateUser
 {
     // Hash ficticio para igualar el tiempo de respuesta cuando el correo no existe
     // (evita enumerar usuarios midiendo latencia).
+    // No corresponde a ninguna cuenta real.
+    // nosemgrep
     private const DUMMY_HASH = '$2y$12$SDQ9XUHC0e3A2w4N.0QH0etal3gL4H3jeq4KkV3lJBxHFrbij0MwS';
 
     public function __construct(

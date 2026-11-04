@@ -26,8 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refrescar = useCallback(async () => {
     try {
-      const { usuario } = await api<{ usuario: Usuario }>('/auth/yo');
-      setUsuario(usuario);
+      const { usuario: actual } = await api<{ usuario: Usuario }>('/auth/yo');
+      setUsuario(actual);
     } catch {
       setUsuario(null);
     } finally {
@@ -45,10 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refrescar, queryClient]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { usuario } = await api<{ usuario: Usuario }>('/auth/login', { method: 'POST', body: { email, password } });
+    const { usuario: autenticado } = await api<{ usuario: Usuario }>('/auth/login', { method: 'POST', body: { email, password } });
     queryClient.clear();
-    setUsuario(usuario);
-    return usuario;
+    setUsuario(autenticado);
+    return autenticado;
   }, [queryClient]);
 
   const logout = useCallback(async () => {

@@ -1,0 +1,12 @@
+# Configuración de Gitleaks: reglas por defecto + excepciones revisadas.
+# Los valores permitidos son marcadores de ejemplo o secretos de prueba, no credenciales reales.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Plantillas de configuración y datos de prueba"
+paths = [
+  '''^\.env\.example$''',
+  '''^backend/\.env\.(example|xampp)$''',
+  '''^backend/tests/''',
+]
