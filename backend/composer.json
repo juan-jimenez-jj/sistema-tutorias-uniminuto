@@ -21,7 +21,7 @@
         "slim/slim": "^4.14"
     },
     "require-dev": {
-        "phpstan/phpstan": "^1.12",
+        "phpstan/phpstan": "^2.3",
         "phpunit/phpunit": "^11.4",
         "squizlabs/php_codesniffer": "^3.10"
     },
