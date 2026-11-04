@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------
 
 # 1) Dependencias de Composer (sin herramientas de desarrollo)
-FROM composer:2.8 AS vendor
+FROM composer:2.10 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock* ./
 RUN composer install --no-dev --no-interaction --no-scripts --prefer-dist --optimize-autoloader --ignore-platform-reqs
