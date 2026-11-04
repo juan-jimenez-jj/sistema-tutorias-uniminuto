@@ -3,9 +3,8 @@
 set -e
 cd /var/www/app
 
-PORT="${PORT:-8080}"
-echo "Listen ${PORT}" > /etc/apache2/ports.conf
-sed -i "s/<VirtualHost \*:[0-9]*>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/000-default.conf
+# Apache toma el puerto de esta variable (ver ports.conf y el VirtualHost).
+export PORT="${PORT:-8080}"
 
 echo "[tutorias] Esperando la base de datos..."
 i=0

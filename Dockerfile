@@ -21,7 +21,8 @@ WORKDIR /app
 COPY backend/composer.json backend/composer.lock* ./
 RUN composer install --no-dev --no-interaction --no-scripts --prefer-dist --optimize-autoloader --ignore-platform-reqs
 
-FROM php:8.3-apache
+# 8.3.36: corrige las RCE críticas de PHP publicadas en octubre de 2026.
+FROM php:8.3.36-apache
 RUN docker-php-ext-install pdo_mysql opcache \
  && a2enmod rewrite headers remoteip \
  && rm -rf /var/lib/apt/lists/*
@@ -41,10 +42,14 @@ COPY --from=web /web/dist ./web
 COPY deploy/server.php ./web/server.php
 COPY deploy/entrypoint.sh /usr/local/bin/tutorias-start
 
+# Apache lee el puerto de la variable PORT (la define Railway), así que el contenedor
+# no necesita modificar su configuración al arrancar y puede correr sin privilegios de root.
 RUN chmod +x /usr/local/bin/tutorias-start bin/console \
- && mkdir -p var/cache && chown -R www-data:www-data var
+ && mkdir -p var/cache && chown -R www-data:www-data var \
+ && echo 'Listen ${PORT}' > /etc/apache2/ports.conf
 
-ENV APP_ENV=production \
+ENV PORT=8080 \
+    APP_ENV=production \
     COOKIE_SECURE=true \
     APP_HSTS=true \
     MAIL_DRIVER=log \
@@ -52,4 +57,5 @@ ENV APP_ENV=production \
     LOG_STREAM=php://stderr
 
 EXPOSE 8080
+USER www-data
 CMD ["tutorias-start"]

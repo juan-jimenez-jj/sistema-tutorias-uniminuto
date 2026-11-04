@@ -10,7 +10,7 @@ COPY composer.json composer.lock* ./
 RUN composer install --no-dev --no-interaction --no-scripts --prefer-dist --optimize-autoloader --ignore-platform-reqs
 
 # 2) Imagen de ejecución
-FROM php:8.3-apache AS runtime
+FROM php:8.3.36-apache AS runtime
 LABEL org.opencontainers.image.title="tutorias-api" \
       org.opencontainers.image.description="API REST del Sistema de Tutorías UNIMINUTO"
 
