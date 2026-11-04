@@ -1,0 +1,10 @@
+**/node_modules
+**/vendor
+**/.env
+frontend/dist
+backend/var
+backend/.phpunit.cache
+backend/.phpstan.cache
+legacy
+docs/capturas
+.git

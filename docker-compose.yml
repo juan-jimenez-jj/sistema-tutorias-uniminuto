@@ -1,0 +1,118 @@
+# =====================================================================
+# Sistema de Tutorías UNIMINUTO — infraestructura como código
+#   docker compose up -d --build        → http://localhost:8080
+#   Bandeja de correo de pruebas (Mailpit) → http://localhost:8025
+# Servicios: web (nginx + SPA) → api (Apache/PHP) → db (MySQL 8.4)
+#            worker (outbox → correo), migrate (one-shot), mailpit, backup
+# =====================================================================
+name: tutorias
+
+x-api-env: &api-env
+  APP_ENV: ${APP_ENV:-production}
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  DB_HOST: db
+  DB_PORT: 3306
+  DB_DATABASE: ${MYSQL_DATABASE:-tutorias}
+  DB_USERNAME: ${MYSQL_USER:-tutorias}
+  DB_PASSWORD: ${MYSQL_PASSWORD:?Define MYSQL_PASSWORD en .env}
+  JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  MAIL_DRIVER: smtp
+  MAIL_HOST: ${MAIL_HOST:-mailpit}
+  MAIL_PORT: ${MAIL_PORT:-1025}
+  MAIL_USERNAME: ${MAIL_USERNAME:-}
+  MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+  MAIL_ENCRYPTION: ${MAIL_ENCRYPTION:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tutorias}
+      MYSQL_USER: ${MYSQL_USER:-tutorias}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: America/Bogota
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./infra/mysql/my.cnf:/etc/mysql/conf.d/tutorias.cnf:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [backend]
+
+  migrate:
+    build: ./backend
+    command: ["sh", "-c", "php bin/console migrate && php bin/console db:seed --force"]
+    environment:
+      <<: *api-env
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+    networks: [backend]
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+
+  worker:
+    build: ./backend
+    command: ["php", "bin/console", "outbox:work"]
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      disable: true
+    networks: [backend]
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_DEMO: ${VITE_DEMO:-1}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [backend]
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+    networks: [backend]
+
+  backup:
+    image: mysql:8.4
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tutorias}
+      BACKUP_KEEP_DAYS: 7
+    volumes:
+      - ./infra/backup/backup.sh:/backup.sh:ro
+      - backups:/backups
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+
+volumes:
+  db-data:
+  backups:
+
+networks:
+  backend:

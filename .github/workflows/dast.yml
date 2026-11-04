@@ -1,0 +1,30 @@
+# Escaneo dinámico (DAST) con OWASP ZAP sobre el sistema levantado con Docker Compose (tarea T33).
+# Se ejecuta cada lunes y bajo demanda; publica el informe como artefacto.
+name: DAST · OWASP ZAP
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Levantar el sistema
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait web
+      - name: ZAP baseline
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:8080
+          allow_issue_writing: false
+          cmd_options: '-a'
+      - if: always()
+        run: docker compose logs api > api.log && docker compose down -v

@@ -1,0 +1,544 @@
+openapi: 3.0.3
+info:
+  title: API del Sistema de Tutorías UNIMINUTO
+  version: 2.0.0
+  description: |
+    API REST del Sistema de Gestión de Tutorías de Ciencias Básicas (UNIMINUTO, sede Zipaquirá).
+
+    **Autenticación.** `POST /auth/login` devuelve un JWT y además fija dos cookies:
+    `tut_session` (HttpOnly, con el JWT) y `tut_csrf` (legible). El navegador usa la cookie y debe
+    enviar el valor de `tut_csrf` en el header `X-CSRF-Token` en todo método que modifique datos.
+    Los clientes de API (Swagger, Postman, apps) envían `Authorization: Bearer <token>` y no necesitan CSRF.
+
+    **Errores.** Todas las respuestas de error usan `application/problem+json` (RFC 7807) con un `code`
+    estable que el cliente puede interpretar (p. ej. `slot_full`, `cancellation_window_closed`).
+  contact:
+    name: Equipo de Arquitectura — Ingeniería de Sistemas UNIMINUTO
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Docker Compose local
+  - url: http://localhost:5173/api/v1
+    description: Desarrollo con Vite
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+tags:
+  - name: Autenticación
+  - name: Catálogo
+  - name: Disponibilidad
+    description: Franjas semanales del docente
+  - name: Reservas
+    description: Ciclo de vida de una tutoría
+  - name: Notificaciones
+  - name: Administración
+  - name: Plataforma
+
+paths:
+  /auth/registro:
+    post:
+      tags: [Autenticación]
+      summary: Registro público de estudiantes
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistroRequest' }
+      responses:
+        '201': { description: Cuenta creada, content: { application/json: { schema: { type: object, properties: { usuario: { $ref: '#/components/schemas/Usuario' } } } } } }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Invalido' }
+  /auth/login:
+    post:
+      tags: [Autenticación]
+      summary: Iniciar sesión
+      description: Máximo 5 intentos fallidos por correo en 15 minutos; después responde 429 con `Retry-After`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, example: estudiante@uniminuto.edu.co }
+                password: { type: string, format: password, example: Estudiante2026* }
+      responses:
+        '200':
+          description: Sesión iniciada
+          headers:
+            Set-Cookie: { schema: { type: string }, description: 'tut_session (HttpOnly) y tut_csrf' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  usuario: { $ref: '#/components/schemas/Usuario' }
+                  token: { type: string, description: JWT HS256 }
+                  expiraEn: { type: integer, example: 28800 }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '429': { $ref: '#/components/responses/DemasiadosIntentos' }
+  /auth/logout:
+    post:
+      tags: [Autenticación]
+      summary: Cerrar sesión (borra las cookies)
+      security: []
+      responses: { '204': { description: Sesión cerrada } }
+  /publico/resumen:
+    get:
+      tags: [Plataforma]
+      summary: Cifras agregadas para la portada (sin autenticación)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  materias: { type: integer }
+                  docentes: { type: integer }
+                  tutoriasCompletadas: { type: integer }
+                  satisfaccion: { type: number }
+  /auth/yo:
+    get:
+      tags: [Autenticación]
+      summary: Usuario autenticado
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { usuario: { $ref: '#/components/schemas/Usuario' } } } } } }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+  /auth/password:
+    put:
+      tags: [Autenticación]
+      summary: Cambiar la propia contraseña
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [passwordActual, passwordNueva], properties: { passwordActual: { type: string }, passwordNueva: { type: string, minLength: 8, maxLength: 72 } } }
+      responses:
+        '204': { description: Contraseña actualizada }
+        '422': { $ref: '#/components/responses/Invalido' }
+
+  /materias:
+    get:
+      tags: [Catálogo]
+      summary: Materias activas (con número de docentes y franjas)
+      parameters:
+        - { name: incluirInactivas, in: query, schema: { type: string, enum: ['1'] }, description: Solo administradores }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Materia' } } } } } } }
+  /materias/{id}/docentes:
+    get:
+      tags: [Catálogo]
+      summary: Docentes que dictan la materia
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /docente/materias:
+    get:
+      tags: [Disponibilidad]
+      summary: Materias asignadas al docente autenticado
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Prohibido' } }
+  /docente/franjas:
+    get:
+      tags: [Disponibilidad]
+      summary: Franjas del docente autenticado
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Franja' } } } } } } }
+    post:
+      tags: [Disponibilidad]
+      summary: Publicar una franja semanal
+      description: Rechaza franjas que se crucen con otra activa del mismo docente (409 `slot_overlap`) o de materias no asignadas (403).
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FranjaRequest' } } } }
+      responses:
+        '201': { description: Publicada }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Invalido' }
+  /docente/franjas/{id}:
+    put:
+      tags: [Disponibilidad]
+      summary: Editar una franja
+      description: Si la franja tiene reservas futuras solo se pueden cambiar lugar, modalidad y ampliar el cupo (422 `slot_has_bookings`).
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FranjaRequest' } } } }
+      responses: { '200': { description: Actualizada }, '422': { $ref: '#/components/responses/Invalido' } }
+  /docente/franjas/{id}/estado:
+    patch:
+      tags: [Disponibilidad]
+      summary: Publicar o pausar una franja
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { activa: { type: boolean } } } } } }
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Invalido' } }
+
+  /ofertas:
+    get:
+      tags: [Reservas]
+      summary: Calendario de cupos disponibles (rol estudiante)
+      description: Fechas de las próximas 4 semanas con las franjas reservables y los cupos libres de cada una.
+      parameters:
+        - { name: materiaId, in: query, required: true, schema: { type: integer } }
+        - { name: docenteId, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Ofertas' } } } }
+  /tutorias:
+    get:
+      tags: [Reservas]
+      summary: Listar tutorías
+      description: El estudiante ve las suyas, el docente su agenda y el administrador todas.
+      parameters:
+        - { name: alcance, in: query, schema: { type: string, enum: [proximas, historial, pendientes_cierre] } }
+        - { name: estado, in: query, schema: { $ref: '#/components/schemas/EstadoTutoria' } }
+        - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string }, description: Busca por código, tema, estudiante o docente }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaTutorias' } } } }
+    post:
+      tags: [Reservas]
+      summary: Reservar una tutoría (rol estudiante)
+      description: |
+        Reglas: la fecha debe caer en el día de la franja, con al menos 60 minutos de anticipación y máximo 28 días;
+        debe haber cupo; el estudiante no puede tener otra tutoría que se cruce ni más de 5 programadas.
+        La operación es transaccional y serializa reservas concurrentes sobre la misma franja.
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [franjaId, fecha, tema]
+              properties:
+                franjaId: { type: integer, example: 27 }
+                fecha: { type: string, format: date, example: '2027-03-08' }
+                tema: { type: string, minLength: 5, maxLength: 500, example: Integrales por partes }
+      responses:
+        '201':
+          description: Reservada
+          headers: { Location: { schema: { type: string } } }
+          content: { application/json: { schema: { type: object, properties: { tutoria: { $ref: '#/components/schemas/Tutoria' } } } } }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Invalido' }
+  /tutorias/estadisticas:
+    get:
+      tags: [Reservas]
+      summary: Estadísticas personales (estudiante o docente)
+      responses: { '200': { description: OK } }
+  /tutorias/{id}:
+    get:
+      tags: [Reservas]
+      summary: Detalle de una tutoría
+      description: Devuelve 404 si la tutoría no pertenece al usuario (prevención de IDOR).
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { tutoria: { $ref: '#/components/schemas/Tutoria' } } } } } }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /tutorias/{id}/cancelacion:
+    post:
+      tags: [Reservas]
+      summary: Cancelar
+      description: El estudiante solo puede cancelar con 3 horas o más de anticipación (422 `cancellation_window_closed`). El docente debe indicar motivo.
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { motivo: { type: string, maxLength: 500 } } } } } }
+      responses: { '200': { description: Cancelada }, '403': { $ref: '#/components/responses/Prohibido' }, '422': { $ref: '#/components/responses/Invalido' } }
+  /tutorias/{id}/cierre:
+    post:
+      tags: [Reservas]
+      summary: Registrar asistencia (rol docente)
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { asistio: { type: boolean, default: true }, observaciones: { type: string, maxLength: 1000 } } } } } }
+      responses: { '200': { description: Completada o inasistencia }, '422': { $ref: '#/components/responses/Invalido' } }
+  /tutorias/{id}/calificacion:
+    post:
+      tags: [Reservas]
+      summary: Calificar una tutoría completada (una sola vez)
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [calificacion], properties: { calificacion: { type: integer, minimum: 1, maximum: 5 }, comentario: { type: string, maxLength: 1000 } } } } } }
+      responses: { '200': { description: Calificada }, '409': { $ref: '#/components/responses/Conflicto' } }
+
+  /notificaciones:
+    get:
+      tags: [Notificaciones]
+      summary: Notificaciones del usuario
+      parameters: [{ name: limit, in: query, schema: { type: integer, default: 20, maximum: 50 } }]
+      responses: { '200': { description: OK } }
+  /notificaciones/{id}/lectura:
+    post:
+      tags: [Notificaciones]
+      summary: Marcar como leída
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      responses: { '204': { description: OK } }
+  /notificaciones/lectura:
+    post:
+      tags: [Notificaciones]
+      summary: Marcar todas como leídas
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '204': { description: OK } }
+
+  /admin/usuarios:
+    get:
+      tags: [Administración]
+      summary: Buscar usuarios
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: rol, in: query, schema: { $ref: '#/components/schemas/Rol' } }
+        - { name: estado, in: query, schema: { type: string, enum: [activo, inactivo] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Prohibido' } }
+    post:
+      tags: [Administración]
+      summary: Crear usuario (docentes y administradores)
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UsuarioRequest' } } } }
+      responses: { '201': { description: Creado }, '409': { $ref: '#/components/responses/Conflicto' } }
+  /admin/usuarios/{id}:
+    put:
+      tags: [Administración]
+      summary: Editar usuario
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UsuarioRequest' } } } }
+      responses: { '200': { description: OK } }
+  /admin/usuarios/{id}/estado:
+    patch:
+      tags: [Administración]
+      summary: Activar o desactivar una cuenta
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { estado: { type: string, enum: [activo, inactivo] } } } } } }
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Invalido' } }
+  /admin/usuarios/{id}/password:
+    put:
+      tags: [Administración]
+      summary: Restablecer contraseña
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { password: { type: string } } } } } }
+      responses: { '204': { description: OK } }
+  /admin/docentes/{id}/materias:
+    put:
+      tags: [Administración]
+      summary: Asignar materias a un docente (reemplaza la lista)
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { materiaIds: { type: array, items: { type: integer } } } } } } }
+      responses: { '204': { description: OK } }
+  /admin/materias:
+    post:
+      tags: [Administración]
+      summary: Crear materia
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MateriaRequest' } } } }
+      responses: { '201': { description: Creada }, '409': { $ref: '#/components/responses/Conflicto' } }
+  /admin/materias/{id}:
+    put:
+      tags: [Administración]
+      summary: Editar materia
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MateriaRequest' } } } }
+      responses: { '200': { description: OK } }
+  /admin/reportes:
+    get:
+      tags: [Administración]
+      summary: Panel de reportes (caché de 60 s)
+      parameters:
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+      responses: { '200': { description: Totales, por mes, materia, docente, programa y mapa de calor día × hora } }
+  /admin/reportes/tutorias.csv:
+    get:
+      tags: [Administración]
+      summary: Exportar tutorías a CSV (Excel)
+      parameters:
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+      responses: { '200': { description: CSV separado por punto y coma, content: { text/csv: { schema: { type: string } } } } }
+  /admin/auditoria:
+    get:
+      tags: [Administración]
+      summary: Bitácora de auditoría
+      parameters:
+        - { name: accion, in: query, schema: { type: string }, description: 'Prefijo, p. ej. "tutoria."' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses: { '200': { description: OK } }
+
+components:
+  securitySchemes:
+    cookieAuth: { type: apiKey, in: cookie, name: tut_session }
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer } }
+    Page: { name: page, in: query, schema: { type: integer, default: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+    Csrf: { name: X-CSRF-Token, in: header, required: false, schema: { type: string }, description: Obligatorio si la sesión viaja en cookie }
+  responses:
+    Invalido:
+      description: Datos inválidos o regla de negocio incumplida
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+    NoAutenticado:
+      description: Sin sesión o token inválido
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+    Prohibido:
+      description: El rol no tiene permiso
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+    NoEncontrado:
+      description: No existe o no pertenece al usuario
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+    Conflicto:
+      description: Conflicto con el estado actual (cupo agotado, duplicado, cruce)
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+    DemasiadosIntentos:
+      description: Demasiados intentos fallidos
+      headers: { Retry-After: { schema: { type: integer } } }
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problema' } } }
+  schemas:
+    Problema:
+      type: object
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string, example: Conflicto }
+        status: { type: integer, example: 409 }
+        code: { type: string, example: slot_full }
+        detail: { type: string, example: No quedan cupos en esa franja para la fecha elegida. }
+        errors: { type: object, additionalProperties: { type: string } }
+    Rol: { type: string, enum: [estudiante, docente, administrador] }
+    EstadoTutoria: { type: string, enum: [programada, completada, cancelada, no_asistio] }
+    Usuario:
+      type: object
+      properties:
+        id: { type: integer }
+        idInstitucional: { type: string }
+        nombre: { type: string }
+        email: { type: string, format: email }
+        rol: { $ref: '#/components/schemas/Rol' }
+        programaAcademico: { type: string, nullable: true }
+        estado: { type: string, enum: [activo, inactivo] }
+        ultimoAcceso: { type: string, format: date-time, nullable: true }
+        creadoEn: { type: string, format: date-time }
+    RegistroRequest:
+      type: object
+      required: [idInstitucional, nombre, email, password, programaAcademico, aceptaTratamientoDatos]
+      properties:
+        idInstitucional: { type: string, pattern: '^[A-Za-z0-9-]{4,20}$' }
+        nombre: { type: string }
+        email: { type: string, format: email, pattern: '@uniminuto\.edu\.co$' }
+        password: { type: string, minLength: 8, maxLength: 72, description: Debe combinar letras y números }
+        programaAcademico: { type: string }
+        aceptaTratamientoDatos: { type: boolean, description: Autorización Ley 1581 de 2012 }
+    UsuarioRequest:
+      type: object
+      required: [idInstitucional, nombre, email, rol]
+      properties:
+        idInstitucional: { type: string }
+        nombre: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, description: Obligatoria al crear }
+        rol: { $ref: '#/components/schemas/Rol' }
+        programaAcademico: { type: string }
+    Materia:
+      type: object
+      properties:
+        id: { type: integer }
+        codigo: { type: string, example: MAT101 }
+        nombre: { type: string, example: Cálculo Diferencial }
+        descripcion: { type: string, nullable: true }
+        area: { type: string, enum: [Matemáticas, Física, Química, Estadística] }
+        estado: { type: string, enum: [activa, inactiva] }
+        docentes: { type: integer }
+        franjasActivas: { type: integer }
+    MateriaRequest:
+      type: object
+      required: [codigo, nombre, area]
+      properties:
+        codigo: { type: string, pattern: '^[A-Z]{3}\d{3}$' }
+        nombre: { type: string }
+        descripcion: { type: string }
+        area: { type: string, enum: [Matemáticas, Física, Química, Estadística] }
+        estado: { type: string, enum: [activa, inactiva] }
+    FranjaRequest:
+      type: object
+      required: [materiaId, diaSemana, horaInicio, horaFin, lugar, cupo]
+      properties:
+        materiaId: { type: integer }
+        diaSemana: { type: integer, minimum: 1, maximum: 6, description: '1 = lunes … 6 = sábado' }
+        horaInicio: { type: string, example: '14:00' }
+        horaFin: { type: string, example: '15:30' }
+        lugar: { type: string, example: Salón B402 }
+        modalidad: { type: string, enum: [presencial, virtual] }
+        cupo: { type: integer, minimum: 1, maximum: 30 }
+    Franja:
+      allOf:
+        - $ref: '#/components/schemas/FranjaRequest'
+        - type: object
+          properties:
+            id: { type: integer }
+            materiaNombre: { type: string }
+            diaNombre: { type: string }
+            activa: { type: boolean }
+            reservasFuturas: { type: integer }
+    Ofertas:
+      type: object
+      properties:
+        desde: { type: string, format: date }
+        hasta: { type: string, format: date }
+        dias:
+          type: array
+          items:
+            type: object
+            properties:
+              fecha: { type: string, format: date }
+              diaSemana: { type: integer }
+              cuposTotales: { type: integer }
+              franjas:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    docenteId: { type: integer }
+                    docenteNombre: { type: string }
+                    horaInicio: { type: string }
+                    horaFin: { type: string }
+                    lugar: { type: string }
+                    modalidad: { type: string }
+                    cupo: { type: integer }
+                    cuposDisponibles: { type: integer }
+                    yaReservada: { type: boolean }
+    Tutoria:
+      type: object
+      properties:
+        id: { type: integer }
+        codigo: { type: string, example: TUT-8K2F9Q }
+        estado: { $ref: '#/components/schemas/EstadoTutoria' }
+        fecha: { type: string, format: date }
+        horaInicio: { type: string }
+        horaFin: { type: string }
+        iniciaEn: { type: string, format: date-time }
+        yaInicio: { type: boolean }
+        lugar: { type: string }
+        modalidad: { type: string, enum: [presencial, virtual] }
+        tema: { type: string }
+        materia: { type: object, properties: { id: { type: integer }, nombre: { type: string }, codigo: { type: string }, area: { type: string } } }
+        docente: { type: object, properties: { id: { type: integer }, nombre: { type: string }, email: { type: string } } }
+        estudiante: { type: object, properties: { id: { type: integer }, nombre: { type: string }, idInstitucional: { type: string }, email: { type: string }, programa: { type: string } } }
+        canceladaPor: { allOf: [{ $ref: '#/components/schemas/Rol' }], nullable: true }
+        motivoCancelacion: { type: string, nullable: true }
+        observacionesDocente: { type: string, nullable: true }
+        calificacion: { type: integer, minimum: 1, maximum: 5, nullable: true }
+        comentarioEstudiante: { type: string, nullable: true }
+    PaginaTutorias:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Tutoria' } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }

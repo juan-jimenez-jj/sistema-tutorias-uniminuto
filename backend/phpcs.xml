@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<ruleset name="Tutorias">
+    <description>Estándar de código: PSR-12</description>
+    <file>src</file>
+    <file>tests</file>
+    <file>config</file>
+    <arg name="colors"/>
+    <arg value="sp"/>
+    <rule ref="PSR12">
+        <!-- Los getters de una línea en entidades mejoran la legibilidad del dominio. -->
+        <exclude name="Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace"/>
+        <exclude name="Squiz.WhiteSpace.ScopeClosingBrace.ContentBefore"/>
+        <exclude name="Generic.Files.LineLength"/>
+    </rule>
+    <rule ref="PSR1.Methods.CamelCapsMethodName.NotCamelCaps">
+        <!-- Los nombres de las pruebas se escriben como frases en español. -->
+        <exclude-pattern>tests/*</exclude-pattern>
+    </rule>
+</ruleset>

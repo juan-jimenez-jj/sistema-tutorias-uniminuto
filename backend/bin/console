@@ -1,0 +1,113 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Psr\Log\LoggerInterface;
+use Tutorias\Identity\Domain\PasswordHasher;
+use Tutorias\Kernel;
+use Tutorias\Platform\Console\DemoSeeder;
+use Tutorias\Platform\Console\LegacyImporter;
+use Tutorias\Shared\Infrastructure\Config;
+use Tutorias\Shared\Infrastructure\Outbox\OutboxProcessor;
+use Tutorias\Shared\Infrastructure\Persistence\Migrator;
+
+require __DIR__ . '/../vendor/autoload.php';
+date_default_timezone_set('America/Bogota');
+
+$config = Config::fromEnvironment(__DIR__ . '/../.env');
+$container = Kernel::container($config);
+$command = $argv[1] ?? 'help';
+$options = [];
+foreach (array_slice($argv, 2) as $arg) {
+    if (preg_match('/^--([a-z-]+)(?:=(.*))?$/', $arg, $m)) {
+        $options[$m[1]] = $m[2] ?? true;
+    }
+}
+$out = static fn (string $line) => fwrite(STDOUT, $line . PHP_EOL);
+
+try {
+    switch ($command) {
+        case 'migrate':
+            if (!$config->isProduction()) {
+                // En desarrollo (p. ej. XAMPP) crea la base de datos si aún no existe.
+                $server = new PDO(
+                    sprintf('mysql:host=%s;port=%d;charset=utf8mb4', $config->string('DB_HOST', '127.0.0.1'), $config->int('DB_PORT', 3306)),
+                    $config->string('DB_USERNAME', 'root'),
+                    $config->string('DB_PASSWORD'),
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+                );
+                $name = str_replace('`', '', $config->string('DB_DATABASE', 'tutorias'));
+                $server->exec("CREATE DATABASE IF NOT EXISTS `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            }
+            $ran = (new Migrator($container->get(PDO::class), __DIR__ . '/../database/migrations'))->migrate($out);
+            $out($ran === [] ? '✓ La base de datos ya está al día.' : '✓ Migraciones aplicadas: ' . implode(', ', $ran));
+            break;
+
+        case 'db:seed':
+            if ($config->isProduction() && !isset($options['force'])) {
+                throw new RuntimeException('db:seed carga datos de demostración; en producción usa --force si realmente lo quieres.');
+            }
+            (new DemoSeeder($container->get(PDO::class), $container->get(PasswordHasher::class), __DIR__ . '/../database/seeds'))->run($out);
+            break;
+
+        case 'db:reset':
+            if ($config->isProduction()) {
+                throw new RuntimeException('db:reset está deshabilitado en producción.');
+            }
+            $pdo = $container->get(PDO::class);
+            $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+            foreach ($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $table) {
+                $pdo->exec("DROP TABLE `{$table}`");
+            }
+            $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+            $out('✓ Tablas eliminadas. Ejecuta "migrate" y "db:seed".');
+            break;
+
+        case 'outbox:work':
+            $processor = $container->get(OutboxProcessor::class);
+            $logger = $container->get(LoggerInterface::class);
+            $sleep = (int) ($options['sleep'] ?? 2);
+            $out('▶ Worker de notificaciones iniciado (Ctrl+C para detener).');
+            $running = true;
+            if (function_exists('pcntl_signal')) {
+                pcntl_async_signals(true);
+                pcntl_signal(SIGTERM, static function () use (&$running) { $running = false; });
+                pcntl_signal(SIGINT, static function () use (&$running) { $running = false; });
+            }
+            do {
+                $result = $processor->processBatch();
+                if ($result['procesados'] + $result['fallidos'] > 0) {
+                    $out(sprintf('[%s] procesados=%d fallidos=%d', date('H:i:s'), $result['procesados'], $result['fallidos']));
+                }
+                if (isset($options['once'])) {
+                    break;
+                }
+                if ($result['procesados'] + $result['fallidos'] === 0) {
+                    sleep($sleep);
+                }
+            } while ($running);
+            $logger->info('outbox.worker_detenido');
+            break;
+
+        case 'legacy:import':
+            $file = (string) ($options['file'] ?? __DIR__ . '/../database/legacy/Anexo_BaseDatos_Tutorias.sql');
+            (new LegacyImporter($container->get(PDO::class)))->run($file, isset($options['dry-run']), $out);
+            break;
+
+        default:
+            $out(<<<TXT
+            Sistema de Tutorías UNIMINUTO — consola
+
+              migrate                    Aplica las migraciones pendientes
+              db:seed                    Carga docentes, franjas y datos de demostración
+              db:reset                   Elimina todas las tablas (solo desarrollo)
+              outbox:work [--once]       Procesa la cola de notificaciones (correo + campana)
+              legacy:import --file=…     Migra tutorías del sistema heredado con reporte de conciliación
+                            [--dry-run]  Solo valida, no escribe
+            TXT);
+    }
+} catch (Throwable $e) {
+    fwrite(STDERR, '✗ ' . $e->getMessage() . PHP_EOL);
+    exit(1);
+}

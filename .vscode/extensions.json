@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "bmewburn.vscode-intelephense-client",
+    "dbaeumer.vscode-eslint",
+    "ms-azuretools.vscode-docker",
+    "42crunch.vscode-openapi",
+    "bierner.markdown-mermaid"
+  ]
+}

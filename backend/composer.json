@@ -1,0 +1,55 @@
+{
+    "name": "uniminuto/sistema-tutorias",
+    "description": "Sistema de Gestión de Tutorías de Ciencias Básicas — UNIMINUTO Zipaquirá. Monolito modular con arquitectura hexagonal.",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        { "name": "Juan David Jiménez Jiménez", "role": "Arquitecto de Software Líder" },
+        { "name": "Juan David Vanegas Méndez", "role": "Frontend / QA y Seguridad" },
+        { "name": "Miguel Ángel Blanco", "role": "Backend / DevOps" },
+        { "name": "Simón Pinzón Algarra", "role": "Arquitecto de Datos" }
+    ],
+    "require": {
+        "php": "^8.2",
+        "ext-json": "*",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "firebase/php-jwt": "^7.2",
+        "monolog/monolog": "^3.7",
+        "phpmailer/phpmailer": "^6.9",
+        "slim/psr7": "^1.7",
+        "slim/slim": "^4.14"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^1.12",
+        "phpunit/phpunit": "^11.4",
+        "squizlabs/php_codesniffer": "^3.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tutorias\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tutorias\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "serve": "php -S 0.0.0.0:8080 -t public public/index.php",
+        "migrate": "php bin/console migrate",
+        "seed": "php bin/console db:seed",
+        "worker": "php bin/console outbox:work",
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite unit",
+        "test:integration": "phpunit --testsuite integration",
+        "lint": "phpcs",
+        "analyse": "phpstan analyse --memory-limit=512M",
+        "check": ["@lint", "@analyse", "@test"]
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable"
+}

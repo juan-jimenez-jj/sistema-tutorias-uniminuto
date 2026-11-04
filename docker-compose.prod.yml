@@ -1,0 +1,29 @@
+# Sobrescrituras para Staging/Producción:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# - Sin Mailpit: se usa el SMTP institucional (variables MAIL_* en .env).
+# - Sin datos de demostración: solo migraciones.
+# - Cookies Secure (exige HTTPS en el balanceador o en un proxy TLS delante de "web").
+# - Dos réplicas de la API y del worker (la outbox usa SKIP LOCKED, admite varios workers).
+services:
+  migrate:
+    command: ["php", "bin/console", "migrate"]
+  api:
+    environment:
+      COOKIE_SECURE: "true"
+      APP_HSTS: "true"
+      MAIL_HOST: ${MAIL_HOST:?Define MAIL_HOST}
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+  worker:
+    environment:
+      MAIL_HOST: ${MAIL_HOST:?Define MAIL_HOST}
+    deploy:
+      replicas: 2
+  web:
+    build:
+      args:
+        VITE_DEMO: "0"
+  mailpit:
+    profiles: ["dev"]
