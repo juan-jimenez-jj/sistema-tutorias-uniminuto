@@ -1,6 +1,21 @@
-# Sistema de Gestión de Tutorías · Ciencias Básicas
+<div align="center">
 
-**UNIMINUTO, sede Zipaquirá** — Proyecto de Arquitectura de Software, versión 2.0
+# Sistema de gestión de tutorías para el área de ciencias básicas en la universidad UNIMINUTO sede Zipaquirá
+
+**Simón Pinzón Algarra**<br>
+**Juan David Jiménez Jiménez**<br>
+**Juan David Vanegas Méndez**<br>
+**Miguel Ángel Blanco Martínez**
+
+Corporación Universitaria Minuto de Dios<br>
+Arquitectura de software<br>
+Docente: Edwin Arias Cruz
+
+20 de noviembre de 2026
+
+</div>
+
+---
 
 Plataforma para que los estudiantes reserven tutorías de cálculo, física, química y estadística, los docentes publiquen sus horarios y registren la asistencia, y la coordinación académica mida el impacto del acompañamiento.
 
@@ -170,7 +185,7 @@ Empieza por [`docs/arquitectura/README.md`](docs/arquitectura/README.md). Para e
 |---|---|
 | Arquitecto de Software Líder | Juan David Jiménez Jiménez |
 | Arquitecto de Datos | Simón Pinzón Algarra |
-| Desarrollador Backend · DevOps | Miguel Ángel Blanco |
+| Desarrollador Backend · DevOps | Miguel Ángel Blanco Martínez |
 | Desarrollador Frontend · QA y Seguridad | Juan David Vanegas Méndez |
 
 Corporación Universitaria Minuto de Dios — Ingeniería de Sistemas — Arquitectura de Software, 2026.
