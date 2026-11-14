@@ -13,23 +13,32 @@ final class PdoReportQueries implements ReportQueries
     {
     }
 
-    public function dashboard(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    /**
+     * Definiciones (las mismas del panel del docente):
+     * - estudiantes atendidos: estudiantes distintos con al menos una tutoría completada;
+     * - programadas: reservas futuras; pendientes de cierre: ya empezaron y nadie registró la asistencia.
+     */
+    public function dashboard(\DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $now): array
     {
         $p = ['desde' => $from->format('Y-m-d'), 'hasta' => $to->format('Y-m-d')];
+        $pNow = $p + ['ahora' => $now->format('Y-m-d H:i:s')];
+        $pNow2 = $pNow + ['ahora2' => $now->format('Y-m-d H:i:s')];
 
         $totals = $this->one(
             "SELECT COUNT(*) AS total,
-                    SUM(estado = 'programada') AS programadas,
+                    SUM(estado = 'programada' AND TIMESTAMP(fecha, hora_inicio) >= :ahora) AS programadas,
+                    SUM(estado = 'programada' AND TIMESTAMP(fecha, hora_inicio) < :ahora2) AS pendientes,
                     SUM(estado = 'completada') AS completadas,
                     SUM(estado = 'cancelada') AS canceladas,
                     SUM(estado = 'no_asistio') AS inasistencias,
-                    COUNT(DISTINCT estudiante_id) AS estudiantes,
+                    COUNT(DISTINCT CASE WHEN estado = 'completada' THEN estudiante_id END) AS estudiantes,
+                    COUNT(DISTINCT estudiante_id) AS solicitantes,
                     COUNT(DISTINCT docente_id) AS docentes,
                     ROUND(AVG(calificacion), 2) AS calificacion,
                     COUNT(calificacion) AS calificadas,
                     COALESCE(SUM(CASE WHEN estado = 'completada' THEN TIME_TO_SEC(TIMEDIFF(hora_fin, hora_inicio)) END), 0) / 3600 AS horas
              FROM tutorias WHERE fecha BETWEEN :desde AND :hasta",
-            $p
+            $pNow2
         );
         $closed = (int) $totals['completadas'] + (int) $totals['inasistencias'];
 
@@ -37,10 +46,12 @@ final class PdoReportQueries implements ReportQueries
             'totales' => [
                 'tutorias' => (int) $totals['total'],
                 'programadas' => (int) $totals['programadas'],
+                'pendientesCierre' => (int) $totals['pendientes'],
                 'completadas' => (int) $totals['completadas'],
                 'canceladas' => (int) $totals['canceladas'],
                 'inasistencias' => (int) $totals['inasistencias'],
                 'estudiantesAtendidos' => (int) $totals['estudiantes'],
+                'estudiantesConReserva' => (int) $totals['solicitantes'],
                 'docentesActivos' => (int) $totals['docentes'],
                 'calificacionPromedio' => $totals['calificacion'] !== null ? (float) $totals['calificacion'] : null,
                 'tutoriasCalificadas' => (int) $totals['calificadas'],
@@ -53,13 +64,16 @@ final class PdoReportQueries implements ReportQueries
                 'completadas' => (int) $r['completadas'],
                 'canceladas' => (int) $r['canceladas'],
                 'programadas' => (int) $r['programadas'],
+                'pendientesCierre' => (int) $r['pendientes'],
                 'inasistencias' => (int) $r['inasistencias'],
             ], $this->all(
                 "SELECT DATE_FORMAT(fecha, '%Y-%m') AS mes,
                         SUM(estado = 'completada') AS completadas, SUM(estado = 'cancelada') AS canceladas,
-                        SUM(estado = 'programada') AS programadas, SUM(estado = 'no_asistio') AS inasistencias
+                        SUM(estado = 'programada' AND TIMESTAMP(fecha, hora_inicio) >= :ahora) AS programadas,
+                        SUM(estado = 'programada' AND TIMESTAMP(fecha, hora_inicio) < :ahora2) AS pendientes,
+                        SUM(estado = 'no_asistio') AS inasistencias
                  FROM tutorias WHERE fecha BETWEEN :desde AND :hasta GROUP BY mes ORDER BY mes",
-                $p
+                $pNow2
             )),
             'porMateria' => array_map(static fn (array $r) => [
                 'materiaId' => (int) $r['id'],
@@ -83,24 +97,28 @@ final class PdoReportQueries implements ReportQueries
                 'completadas' => (int) $r['completadas'],
                 'inasistencias' => (int) $r['inasistencias'],
                 'canceladasPorDocente' => (int) $r['canc_doc'],
+                'pendientesCierre' => (int) $r['pendientes'],
                 'estudiantes' => (int) $r['estudiantes'],
                 'calificacion' => $r['calificacion'] !== null ? (float) $r['calificacion'] : null,
             ], $this->all(
                 "SELECT u.id, u.nombre, COUNT(*) AS total, SUM(t.estado = 'completada') AS completadas,
                         SUM(t.estado = 'no_asistio') AS inasistencias, SUM(t.cancelada_por = 'docente') AS canc_doc,
-                        COUNT(DISTINCT t.estudiante_id) AS estudiantes, ROUND(AVG(t.calificacion), 2) AS calificacion
+                        SUM(t.estado = 'programada' AND TIMESTAMP(t.fecha, t.hora_inicio) < :ahora) AS pendientes,
+                        COUNT(DISTINCT CASE WHEN t.estado = 'completada' THEN t.estudiante_id END) AS estudiantes,
+                        ROUND(AVG(t.calificacion), 2) AS calificacion
                  FROM tutorias t JOIN usuarios u ON u.id = t.docente_id
                  WHERE t.fecha BETWEEN :desde AND :hasta GROUP BY u.id ORDER BY total DESC",
-                $p
+                $pNow
             )),
             'porPrograma' => array_map(static fn (array $r) => [
                 'programa' => $r['programa'] ?? 'Sin programa',
                 'estudiantes' => (int) $r['estudiantes'],
                 'tutorias' => (int) $r['total'],
             ], $this->all(
-                "SELECT e.programa_academico AS programa, COUNT(DISTINCT t.estudiante_id) AS estudiantes, COUNT(*) AS total
+                "SELECT e.programa_academico AS programa,
+                        COUNT(DISTINCT CASE WHEN t.estado = 'completada' THEN t.estudiante_id END) AS estudiantes, COUNT(*) AS total
                  FROM tutorias t JOIN usuarios e ON e.id = t.estudiante_id
-                 WHERE t.fecha BETWEEN :desde AND :hasta GROUP BY e.programa_academico ORDER BY total DESC",
+                 WHERE t.fecha BETWEEN :desde AND :hasta GROUP BY e.programa_academico ORDER BY estudiantes DESC, total DESC",
                 $p
             )),
             'mapaCalor' => array_map(static fn (array $r) => [

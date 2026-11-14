@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BarChart3, BookOpen, CalendarCheck2, CircleCheckBig, Download, GraduationCap, Hourglass, Plus, Search, ShieldCheck, Star, Users, XCircle } from 'lucide-react';
+import { AlarmClock, BarChart3, BookOpen, CalendarCheck2, CircleCheckBig, Download, GraduationCap, Hourglass, Plus, Search, ShieldCheck, Star, Users, XCircle } from 'lucide-react';
 import { api, qs } from '../../api/client';
 import type { Materia, Pagina, RegistroAuditoria, Reporte, Rol, UsuarioAdmin } from '../../api/types';
 import { fechaConAnio, hace, iniciales, mesCorto } from '../../lib/format';
@@ -8,10 +8,11 @@ import { useToast } from '../../lib/toast';
 import { Barras, Columnas, MapaCalor } from '../../components/Charts';
 import { AreaIcon, Dialog, ErrorAlert, PageHero, Pager, SelectInput, Skeleton, Stat, TextArea, TextInput, Vacio, fieldErrors } from '../../components/ui';
 
+/** Fecha local (hora de Colombia en el navegador), no UTC: después de las 7 p. m. toISOString ya daría el día siguiente. */
 function isoHoy(offsetDays = 0) {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 const PERIODOS: Record<string, [number, number]> = {
@@ -41,19 +42,25 @@ export function Reportes() {
       {isLoading || !data || !t ? <Skeleton height={120} count={3} /> : (
         <>
           <div className="stats stats-6 stagger">
-            <Stat icon={CalendarCheck2} color="azul" valor={t.tutorias} etiqueta="tutorías solicitadas" />
-            <Stat icon={GraduationCap} color="violeta" valor={t.estudiantesAtendidos} etiqueta="estudiantes atendidos" />
-            <Stat icon={Hourglass} color="celeste" valor={t.horasAcompanamiento} decimales={1} etiqueta="horas de acompañamiento" />
-            <Stat icon={CircleCheckBig} color="verde" valor={t.tasaAsistencia} decimales={1} sufijo="%" etiqueta="asistencia" />
-            <Stat icon={XCircle} color="rojo" valor={t.tasaCancelacion} decimales={1} sufijo="%" etiqueta="cancelación" />
-            <Stat icon={Star} color="amarillo" valor={t.calificacionPromedio} decimales={2} etiqueta="satisfacción (1 a 5)" />
+            <Stat icon={CalendarCheck2} color="azul" valor={t.tutorias} etiqueta="tutorías solicitadas" nota={`Reservas del periodo en cualquier estado; ${t.completadas.toLocaleString('es-CO')} completadas`} />
+            <Stat icon={GraduationCap} color="violeta" valor={t.estudiantesAtendidos} etiqueta="estudiantes atendidos" nota={`Con al menos una tutoría completada (${t.estudiantesConReserva} reservaron)`} />
+            <Stat icon={Hourglass} color="celeste" valor={t.horasAcompanamiento} decimales={1} etiqueta="horas de acompañamiento" nota="Suma de la duración de las tutorías completadas" />
+            <Stat icon={CircleCheckBig} color="verde" valor={t.tasaAsistencia} decimales={1} sufijo="%" etiqueta="asistencia" nota="Completadas entre completadas e inasistencias" />
+            <Stat icon={XCircle} color="rojo" valor={t.tasaCancelacion} decimales={1} sufijo="%" etiqueta="cancelación" nota="Canceladas sobre el total de reservas" />
+            <Stat icon={Star} color="amarillo" valor={t.calificacionPromedio} decimales={2} etiqueta="satisfacción (1 a 5)" nota={`Promedio de ${t.tutoriasCalificadas} calificaciones`} />
           </div>
+          {t.pendientesCierre > 0 && (
+            <div className="aviso-pendientes" role="status">
+              <AlarmClock size={20} aria-hidden />
+              <span><b>{t.pendientesCierre} {t.pendientesCierre === 1 ? 'tutoría ya pasó' : 'tutorías ya pasaron'} sin registro de asistencia.</b> No cuentan en la asistencia hasta que el docente las cierre; la columna «Por registrar» muestra de quién son.</span>
+            </div>
+          )}
 
           <div className="grid-2" style={{ marginBottom: 20 }}>
             <section className="panel">
               <h2 style={{ marginBottom: 12 }}>Evolución mensual</h2>
-              <Columnas datos={data.porMes.map((m) => ({ label: mesCorto(m.mes), valores: [m.completadas, m.inasistencias, m.canceladas, m.programadas] }))}
-                series={[{ nombre: 'Completadas', color: '#0055a4' }, { nombre: 'Inasistencias', color: '#ffc72c' }, { nombre: 'Canceladas', color: '#f87171' }, { nombre: 'Programadas', color: '#93c5fd' }]} />
+              <Columnas datos={data.porMes.map((m) => ({ label: mesCorto(m.mes), valores: [m.completadas, m.inasistencias, m.canceladas, m.pendientesCierre, m.programadas] }))}
+                series={[{ nombre: 'Completadas', color: '#0055a4' }, { nombre: 'Inasistencias', color: '#ffc72c' }, { nombre: 'Canceladas', color: '#f87171' }, { nombre: 'Por registrar', color: '#fb923c' }, { nombre: 'Programadas', color: '#93c5fd' }]} />
             </section>
             <section className="panel">
               <h2 style={{ marginBottom: 4 }}>¿Cuándo piden tutoría?</h2>
@@ -69,7 +76,8 @@ export function Reportes() {
                 series={[{ nombre: 'Completadas', color: 'linear-gradient(90deg, #003a7a, #1a6fc4)' }, { nombre: 'Canceladas, pendientes o inasistencias', color: '#c7d7ee' }]} />
             </section>
             <section className="panel">
-              <h2 style={{ marginBottom: 12 }}>Estudiantes por programa</h2>
+              <h2 style={{ marginBottom: 4 }}>Estudiantes atendidos por programa</h2>
+              <p className="small muted" style={{ marginBottom: 12 }}>Estudiantes con al menos una tutoría completada en el periodo.</p>
               <Barras datos={data.porPrograma.map((p) => ({ label: p.programa, valores: [p.estudiantes] }))} series={[{ nombre: 'Estudiantes', color: 'linear-gradient(90deg, #f2b200, #ffd862)' }]} />
             </section>
           </div>
@@ -78,12 +86,12 @@ export function Reportes() {
             <h2 style={{ padding: '20px 22px 12px' }}>Desempeño por docente</h2>
             <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
               <table>
-                <thead><tr><th>Docente</th><th className="num">Tutorías</th><th className="num">Completadas</th><th className="num">Inasistencias</th><th className="num">Canceló el docente</th><th className="num">Estudiantes</th><th className="num">Satisfacción</th></tr></thead>
+                <thead><tr><th>Docente</th><th className="num">Tutorías</th><th className="num">Completadas</th><th className="num">Inasistencias</th><th className="num">Canceló el docente</th><th className="num">Por registrar</th><th className="num">Estudiantes atendidos</th><th className="num">Satisfacción</th></tr></thead>
                 <tbody>
                   {data.porDocente.map((d) => (
                     <tr key={d.docenteId}>
                       <td><span className="persona"><span className="avatar">{iniciales(d.docente)}</span>{d.docente}</span></td><td className="num">{d.total}</td><td className="num">{d.completadas}</td><td className="num">{d.inasistencias}</td>
-                      <td className="num">{d.canceladasPorDocente}</td><td className="num">{d.estudiantes}</td><td className="num">{d.calificacion?.toFixed(2) ?? '—'}</td>
+                      <td className="num">{d.canceladasPorDocente}</td><td className="num">{d.pendientesCierre > 0 ? <span className="badge badge-no_asistio">{d.pendientesCierre}</span> : 0}</td><td className="num">{d.estudiantes}</td><td className="num">{d.calificacion?.toFixed(2) ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

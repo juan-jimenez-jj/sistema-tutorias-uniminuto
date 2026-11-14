@@ -48,6 +48,8 @@ Es la modernización del proyecto de Ingeniería de Software: el sistema PHP/XAM
 
 Con XAMPP (PHP 8.2 o superior), Composer y Node.js instalados y MySQL iniciado en el panel de XAMPP: doble clic a **`instalar_y_ejecutar.bat`**. Instala las dependencias, crea la base de datos con los datos de demostración y abre la aplicación en http://localhost:5173.
 
+Para volver a generar los datos de demostración con fechas del día (por ejemplo, antes de una presentación), ejecuta **`reiniciar_datos_demo.bat`**: borra los datos de prueba y crea tutorías próximas, pendientes de registro y un semestre de historial.
+
 ## Inicio rápido (Docker)
 
 ```bash

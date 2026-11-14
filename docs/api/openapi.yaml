@@ -349,6 +349,13 @@ paths:
     get:
       tags: [Administración]
       summary: Panel de reportes (caché de 60 s)
+      description: |
+        Definiciones de los indicadores (las mismas del panel del docente):
+        - `tutorias`: reservas del periodo en cualquier estado.
+        - `estudiantesAtendidos`: estudiantes distintos con al menos una tutoría completada;
+          `estudiantesConReserva` cuenta a todos los que reservaron.
+        - `programadas`: reservas futuras; `pendientesCierre`: ya empezaron y nadie registró la asistencia.
+        - `tasaAsistencia`: completadas / (completadas + inasistencias); `tasaCancelacion`: canceladas / tutorias.
       parameters:
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }

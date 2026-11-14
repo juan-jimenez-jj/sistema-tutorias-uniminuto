@@ -152,10 +152,12 @@ export interface Reporte {
   totales: {
     tutorias: number;
     programadas: number;
+    pendientesCierre: number;
     completadas: number;
     canceladas: number;
     inasistencias: number;
     estudiantesAtendidos: number;
+    estudiantesConReserva: number;
     docentesActivos: number;
     calificacionPromedio: number | null;
     tutoriasCalificadas: number;
@@ -163,9 +165,9 @@ export interface Reporte {
     tasaCancelacion: number;
     tasaAsistencia: number | null;
   };
-  porMes: { mes: string; completadas: number; canceladas: number; programadas: number; inasistencias: number }[];
+  porMes: { mes: string; completadas: number; canceladas: number; programadas: number; pendientesCierre: number; inasistencias: number }[];
   porMateria: { materiaId: number; materia: string; area: string; total: number; completadas: number; canceladas: number; calificacion: number | null }[];
-  porDocente: { docenteId: number; docente: string; total: number; completadas: number; inasistencias: number; canceladasPorDocente: number; estudiantes: number; calificacion: number | null }[];
+  porDocente: { docenteId: number; docente: string; total: number; completadas: number; inasistencias: number; canceladasPorDocente: number; pendientesCierre: number; estudiantes: number; calificacion: number | null }[];
   porPrograma: { programa: string; estudiantes: number; tutorias: number }[];
   mapaCalor: { diaSemana: number; hora: number; tutorias: number }[];
   periodo: { desde: string; hasta: string };

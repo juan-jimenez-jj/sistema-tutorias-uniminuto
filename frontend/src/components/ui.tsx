@@ -162,13 +162,14 @@ export function CountUp({ valor, decimales = 0 }: { valor: number; decimales?: n
   return <>{actual.toLocaleString('es-CO', { minimumFractionDigits: decimales, maximumFractionDigits: decimales })}</>;
 }
 
-export function Stat({ icon: Icon, valor, decimales = 0, sufijo, etiqueta, color }: { icon: LucideIcon; valor: number | null; decimales?: number; sufijo?: string; etiqueta: string; color: string }) {
+export function Stat({ icon: Icon, valor, decimales = 0, sufijo, etiqueta, color, nota }: { icon: LucideIcon; valor: number | null; decimales?: number; sufijo?: string; etiqueta: string; color: string; nota?: string }) {
   return (
     <div className={`stat c-${color}`}>
       <span className="chip-icono" aria-hidden><Icon size={22} /></span>
       <span className="stat-texto">
         <b>{valor === null ? '—' : <><CountUp valor={valor} decimales={decimales} />{sufijo}</>}</b>
         <span>{etiqueta}</span>
+        {nota && <small className="stat-nota">{nota}</small>}
       </span>
     </div>
   );

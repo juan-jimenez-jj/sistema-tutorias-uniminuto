@@ -48,6 +48,46 @@ final class AdminApiTest extends ApiTestCase
     }
 
     #[Test]
+    public function los_indicadores_usan_las_mismas_definiciones_que_el_panel_del_docente(): void
+    {
+        $laura = $this->login('laura@uniminuto.edu.co');
+        $mateo = $this->login('mateo@uniminuto.edu.co');
+        $sara = $this->login('sara@uniminuto.edu.co');
+
+        $attended = $this->book($laura, Fixtures::SLOT_A, '2027-03-08');
+        $cancelled = $this->book($mateo, Fixtures::SLOT_A, '2027-03-08');
+        $this->assertStatus(200, $this->request('POST', "/api/v1/tutorias/{$cancelled['id']}/cancelacion", [], $mateo));
+        $this->book($sara, Fixtures::SLOT_C, '2027-03-10');        // pasará sin que nadie registre la asistencia
+        $this->book($laura, Fixtures::SLOT_A, '2027-03-15');       // sigue siendo futura
+
+        $this->clock->travelTo('2027-03-08 11:05');
+        $this->assertStatus(200, $this->request('POST', "/api/v1/tutorias/{$attended['id']}/cierre", ['asistio' => true], $this->login('ana@uniminuto.edu.co')));
+
+        $this->clock->travelTo('2027-03-11 09:00');
+        $report = $this->json($this->request('GET', '/api/v1/admin/reportes?desde=2027-03-01&hasta=2027-03-31', null, $this->login('admin@uniminuto.edu.co')));
+        $t = $report['totales'];
+
+        self::assertSame(4, $t['tutorias']);
+        self::assertSame(1, $t['completadas']);
+        self::assertSame(1, $t['canceladas']);
+        self::assertSame(1, $t['programadas'], 'Solo cuenta las futuras');
+        self::assertSame(1, $t['pendientesCierre'], 'Ya pasó y nadie registró la asistencia');
+        self::assertSame(1, $t['estudiantesAtendidos'], 'Solo quien completó una tutoría');
+        self::assertSame(3, $t['estudiantesConReserva']);
+        self::assertLessThanOrEqual($t['completadas'], $t['estudiantesAtendidos']);
+
+        $ana = $report['porDocente'][0];
+        self::assertSame(1, $ana['estudiantes']);
+        self::assertSame(1, $ana['pendientesCierre']);
+        self::assertSame(['mes' => '2027-03', 'completadas' => 1, 'canceladas' => 1, 'programadas' => 1, 'pendientesCierre' => 1, 'inasistencias' => 0], $report['porMes'][0]);
+
+        // El panel del docente y el reporte del coordinador coinciden.
+        $stats = $this->json($this->request('GET', '/api/v1/tutorias/estadisticas', null, $this->login('ana@uniminuto.edu.co')));
+        self::assertSame($stats['estudiantesAtendidos'], $ana['estudiantes']);
+        self::assertSame($stats['pendientesCierre'], $ana['pendientesCierre']);
+    }
+
+    #[Test]
     public function reportes_y_exportacion_csv(): void
     {
         $t = $this->book($this->login('laura@uniminuto.edu.co'), Fixtures::SLOT_A, '2027-03-08', '=HYPERLINK("http://malicioso")');

@@ -6,13 +6,17 @@ namespace Tutorias\Reporting\Application;
 
 use Tutorias\Shared\Application\Actor;
 use Tutorias\Shared\Application\Cache;
+use Tutorias\Shared\Domain\Clock;
 use Tutorias\Shared\Domain\Role;
 use Tutorias\Shared\Domain\ValidationError;
 
 final class GenerateReports
 {
-    public function __construct(private readonly ReportQueries $queries, private readonly Cache $cache)
-    {
+    public function __construct(
+        private readonly ReportQueries $queries,
+        private readonly Cache $cache,
+        private readonly Clock $clock,
+    ) {
     }
 
     /** @return array<string, mixed> */
@@ -23,10 +27,14 @@ final class GenerateReports
         $key = 'reportes.dashboard.' . $from->format('Ymd') . '-' . $to->format('Ymd');
 
         // Caché corta: el panel se recalcula como máximo una vez por minuto aunque lo abran muchos coordinadores.
-        return $this->cache->remember($key, 60, fn () => $this->queries->dashboard($from, $to) + [
-            'periodo' => ['desde' => $from->format('Y-m-d'), 'hasta' => $to->format('Y-m-d')],
-            'generadoEn' => (new \DateTimeImmutable())->format(DATE_ATOM),
-        ]);
+        return $this->cache->remember($key, 60, function () use ($from, $to): array {
+            $now = $this->clock->now();
+
+            return $this->queries->dashboard($from, $to, $now) + [
+                'periodo' => ['desde' => $from->format('Y-m-d'), 'hasta' => $to->format('Y-m-d')],
+                'generadoEn' => $now->format(DATE_ATOM),
+            ];
+        });
     }
 
     /** @return iterable<array<string, mixed>> */
