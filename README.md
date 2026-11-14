@@ -26,7 +26,7 @@ Es la modernización del proyecto de Ingeniería de Software: el sistema PHP/XAM
 | Backend | PHP 8.3 · Slim 4 · PDO/MySQL 8 · JWT · PHPMailer · Monolog |
 | Frontend | React 18 · TypeScript · Vite · React Query |
 | Infraestructura | Docker Compose (nginx, Apache/PHP, MySQL, worker, respaldos, Mailpit) |
-| Calidad | 72 pruebas de backend (incluida una de concurrencia con procesos paralelos) · PHPStan nivel 6 · PSR-12 · ESLint · Vitest |
+| Calidad | 73 pruebas de backend (incluida una de concurrencia con procesos paralelos) · PHPStan nivel 6 · PSR-12 · ESLint · Vitest |
 | DevSecOps | GitHub Actions · Semgrep · Gitleaks · composer/npm audit · OWASP ZAP |
 
 ![Pantalla de inicio](docs/capturas/01-inicio-sesion.png)
